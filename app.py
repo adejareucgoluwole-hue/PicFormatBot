@@ -6,6 +6,7 @@ import requests
 from io import BytesIO
 from PIL import Image
 import json
+import base64
 
 # Enable logging
 logging.basicConfig(
@@ -88,7 +89,6 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def wordcount_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Count words in the provided text."""
-    # Check if text was provided
     if not context.args:
         await update.message.reply_text(
             "📝 Please provide some text to count.\n\n"
@@ -125,7 +125,6 @@ async def json_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parsed = json.loads(json_text)
         formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
         
-        # If too long, send as file
         if len(formatted) > 4000:
             await update.message.reply_document(
                 document=BytesIO(formatted.encode()),
@@ -142,8 +141,6 @@ async def json_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def base64_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Encode or decode Base64."""
-    import base64
-    
     if len(context.args) < 2:
         await update.message.reply_text(
             "🔐 **Base64 Tool**\n\n"
@@ -177,19 +174,32 @@ async def base64_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
+async def plag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check for plagiarism (placeholder)."""
+    if not context.args:
+        await update.message.reply_text(
+            "📝 Please provide text to check for plagiarism.\n\n"
+            "Example: `/plagiarism This text will be checked`"
+        )
+        return
+    
+    text = " ".join(context.args)
+    await update.message.reply_text(
+        f"🔍 **Plagiarism Checker**\n\n"
+        f"Checking: `{text[:100]}...`\n\n"
+        "⚠️ This is a placeholder function.\n"
+        "In production, you would integrate with a plagiarism detection API."
+    )
+
 # ============= IMAGE HANDLERS =============
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle image messages - convert, compress, or remove background."""
-    # Get the largest photo
     photo = update.message.photo[-1]
     file = await photo.get_file()
     
-    # Download the image
     image_bytes = await file.download_as_bytearray()
-    image = Image.open(BytesIO(image_bytes))
     
-    # Create keyboard with options
     keyboard = [
         [
             InlineKeyboardButton("🔄 Convert to JPG", callback_data="convert_jpg"),
@@ -200,15 +210,12 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("📦 Compress Image", callback_data="compress"),
         ],
         [
-            InlineKeyboardButton("🎨 Remove Background", callback_data="remove_bg"),
             InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
         ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Store image data in context for later use
     context.user_data['last_image'] = image_bytes
-    context.user_data['last_image_format'] = image.format
     
     await update.message.reply_text(
         "📸 **Image Received!**\n\nWhat would you like to do with it?",
@@ -235,6 +242,21 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Currently only PDF files are supported."
         )
 
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages that aren't commands."""
+    text = update.message.text
+    
+    # If not a command, just echo with some info
+    word_count = len(text.split())
+    char_count = len(text)
+    
+    await update.message.reply_text(
+        f"📝 **Message received!**\n\n"
+        f"Word count: {word_count}\n"
+        f"Character count: {char_count}\n\n"
+        f"Try using /help to see available commands."
+    )
+
 # ============= CALLBACK QUERY HANDLERS =============
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,7 +271,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Operation cancelled.")
         return
     
-    # Check if we have an image
     if 'last_image' not in user_data:
         await query.edit_message_text("❌ No image found. Please send a new image.")
         return
@@ -259,11 +280,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         if action == "convert_jpg":
-            # Convert to JPG
             if image.mode in ('RGBA', 'LA', 'P'):
-                # Convert to RGB for JPG
                 background = Image.new('RGB', image.size, (255, 255, 255))
-                background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+                if image.mode == 'RGBA':
+                    background.paste(image, mask=image.split()[-1])
+                else:
+                    background.paste(image)
                 image = background
             output = BytesIO()
             image.save(output, format='JPEG', quality=95)
@@ -298,7 +320,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
         elif action == "compress":
-            # Compress image
             output = BytesIO()
             image.save(output, format='JPEG', quality=60, optimize=True)
             output.seek(0)
@@ -319,52 +340,31 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="📦 Here's your compressed image!"
             )
             
-        elif action == "remove_bg":
-            # Simple background removal (just a placeholder - you'd need an API)
-            await query.edit_message_text(
-                "🎨 Background removal requires an API key.\n\n"
-                "You can use:\n"
-                "• remove.bg API\n"
-                "• ClipDrop API\n"
-                "• Or use the free placeholder below."
-            )
-            # For demo, just send a placeholder
-            await query.message.reply_text(
-                "🖼️ Background removed! (This is a placeholder)"
-            )
-            
-        else:
-            await query.edit_message_text("❌ Unknown action.")
-            
     except Exception as e:
         await query.edit_message_text(f"❌ Error processing image: {str(e)}")
         
-    # Clean up
     user_data.pop('last_image', None)
 
 # ============= MAIN APPLICATION =============
 
 def main():
     """Start the bot."""
-    # Create the Application with polling mode (no webhook needed)
     application = Application.builder().token(TOKEN).build()
 
-    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("wordcount", wordcount_command))
     application.add_handler(CommandHandler("json", json_command))
     application.add_handler(CommandHandler("base64", base64_command))
+    application.add_handler(CommandHandler("plagiarism", plag_command))
     
-    # Add message handlers
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    # Add callback query handler for inline buttons
     application.add_handler(CallbackQueryHandler(button_callback))
 
-    # Start the bot (using polling - no webhook required)
     print("🤖 Bot is starting...")
     print("ℹ️ Using polling mode - no webhook needed")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
